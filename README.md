@@ -14,18 +14,22 @@ A pixel companion for Claude Code. It sits above the prompt, reacts to what happ
 
 ## install
 
-```sh
-git clone https://github.com/lucenity0/claude-familiar ~/claude-familiar
-claude --plugin-dir ~/claude-familiar
-```
-
-To load it in every session, set this in `~/.claude/settings.json`:
+familiar runs on function hooks, an early-access part of Claude Code. Turn them on in `~/.claude/settings.json`:
 
 ```json
-{ "env": { "CLAUDE_CODE_PLUGIN_DIRS": "~/claude-familiar" } }
+{ "env": { "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1" } }
 ```
 
-It uses function hooks, an early-access API, and was tested on Claude Code 2.1.287.
+Then install it and start a new session:
+
+```sh
+claude plugin marketplace add lucenity0/claude-familiar
+claude plugin install familiar@claude-familiar
+```
+
+To hack on it instead, clone it and load the folder with `claude --plugin-dir ~/claude-familiar`.
+
+Function hooks may change between releases. familiar was tested on Claude Code 2.1.289.
 
 &nbsp;
 
@@ -62,10 +66,10 @@ It gains xp from finished turns and fixed tests, and keeps it across sessions. L
 
 ## settings
 
-Change these in `/config`, or in `~/.claude/settings.json`:
+Change these in `/config`, or in `~/.claude/settings.json` (a cloned folder is `familiar@inline` instead):
 
 ```json
-{ "pluginConfigs": { "familiar@inline": { "options": { "size": "auto", "quips": false, "quipMinutes": 10 } } } }
+{ "pluginConfigs": { "familiar@claude-familiar": { "options": { "size": "auto", "quips": false, "quipMinutes": 10 } } } }
 ```
 
 `size` is `auto` (full while you read, half while Claude works), `full` or `compact`. Full size draws each pixel as a square of background color, so it has no gaps in any terminal. Compact uses half-block characters: Warp draws them cleanly, while Apple Terminal and VS Code can show thin seams between rows.

@@ -1,0 +1,22 @@
+{
+  "name": "claude-familiar",
+  "description": "A pixel companion for Claude Code that sits above the prompt and reacts to your session",
+  "owner": {
+    "name": "Nafees S",
+    "url": "https://github.com/lucenity0"
+  },
+  "plugins": [
+    {
+      "name": "familiar",
+      "source": "./",
+      "description": "A pixel-art companion above the prompt that reacts to your session, levels up, and can be redrawn by hand",
+      "version": "0.1.0",
+      "license": "MIT",
+      "keywords": ["claude-code", "claude-code-plugin", "companion", "pixel-art", "terminal-pet", "buddy", "function-hooks"],
+      "author": {
+        "name": "Nafees S",
+        "url": "https://github.com/lucenity0"
+      }
+    }
+  ]
+}
