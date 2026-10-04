@@ -1,10 +1,10 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, ResolveInput } from 'claude-code'
 
 import type { Mood, Profile, Species, Sprite } from '../types'
 import { FRESH, HOLD_MS, cleanQuip, formatDuration, levelFor, react } from './mood'
 import type { Signal } from './mood'
-import { SPECIES, bandRows, checkSprite, compactCells, frame, fromGrid, fullCells, rasterCells, toGrid, unfold } from './sprites'
+import { MARGIN_TOP, SPECIES, WIDTH, bandRows, checkSprite, compactCells, frame, fromGrid, fullCells, rasterCells, toGrid, unfold, usedRows } from './sprites'
 import type { Cell, Grid, SpriteSize } from './sprites'
 
 const mind = atom({ plugin: 'familiar', key: 'mind' } as const, FRESH)
@@ -13,14 +13,16 @@ const isHidden = atom({ plugin: 'familiar', key: 'isHidden' } as const, false)
 const profile = atom({ plugin: 'familiar', key: 'profile' } as const, null)
 
 const DRAW_PANE = 'familiar-draw'
+const PICK_PANE = 'familiar-pick'
 const FRAME_MS = 500
 /** How long the z's drift once it falls asleep. */
 const DRIFT_MS = 2 * 60_000
 /** Below this many terminal rows, the band stays half size. */
 const TALL_ROWS = 30
-const BUILT_IN: Exclude<Species, 'custom'>[] = ['clawd', 'sprout', 'owl', 'blob']
+const BUILT_IN: Exclude<Species, 'custom'>[] = ['clawd', 'cat', 'sprout', 'owl', 'blob']
 const NAMES: Record<Exclude<Species, 'custom'>, string[]> = {
   clawd: ['clawd'],
+  cat: ['miso', 'tofu', 'pixel'],
   sprout: ['fern', 'basil', 'moss'],
   owl: ['hoot', 'sage', 'ink'],
   blob: ['mochi', 'gloop', 'bean'],
@@ -39,7 +41,8 @@ const USAGE = [
   '/familiar                 show or hide it',
   '/familiar pet             say hi',
   '/familiar rename <name>   give it a new name',
-  '/familiar species <name>  clawd, sprout, owl, blob or custom',
+  '/familiar species         pick a look from the lineup',
+  '/familiar species <name>  clawd, cat, sprout, owl, blob or custom',
   '/familiar draw            paint your own in a pane',
   '/familiar export          print the sprite as JSON',
   '/familiar import <json>   load a sprite someone shared',
@@ -71,6 +74,38 @@ const runtime = {
   turnTools: 0,
   turnErrors: 0,
   petCount: 0,
+}
+
+/** A sprite at rest, half size and trimmed to the rows it uses: how the lineup shows each look. */
+function preview(sprite: Sprite): Cell[][] {
+  const { top, bottom } = usedRows(sprite)
+  return compactCells(frame(sprite, 'idle', 0, 1), top + MARGIN_TOP, bottom + MARGIN_TOP).map(row => row.slice(0, WIDTH))
+}
+
+/** Cells drawn as a Raster on the terminal, and as colored text everywhere else. */
+function picture($: EngineInterface, e: ResolveInput, key: string, cells: Cell[][]) {
+  if (e.surface === 'terminal') {
+    const { Raster } = $.ui.resolve(e)
+    return <Raster key={key} columns={cells[0]?.length ?? 0} rows={cells.length} cells={rasterCells(cells)} />
+  }
+  const { Box, Text } = $.ui.resolve(e)
+  return (
+    <Box key={key} flexDirection="column">
+      {cells.map(row => (
+        <Text>
+          {row.map(cell =>
+            cell.bg === null ? (
+              <Text {...(cell.fg === null ? {} : { color: cell.fg })}>{cell.glyph}</Text>
+            ) : (
+              <Text color={cell.fg ?? '#000000'} backgroundColor={cell.bg}>
+                {cell.glyph}
+              </Text>
+            ),
+          )}
+        </Text>
+      ))}
+    </Box>
+  )
 }
 
 async function saveProfile($: EngineInterface, fn: (p: Profile) => Profile): Promise<Profile | null> {
@@ -245,10 +280,15 @@ export const register: Register = (on, options) => {
       return { text: `${p.name} is now ${name}.` }
     }
 
+    if (sub === 'species' && rest === '') {
+      await $.ui.open({ id: PICK_PANE, title: `Pick a look for ${p.name}`, focus: true, closeOnEscape: true })
+      return { text: 'Press a number or click a look. Esc closes the lineup.' }
+    }
+
     if (sub === 'species') {
       const species = rest as Species
       if (species === 'custom' && p.custom === null) return { text: 'No custom sprite yet. Make one with /familiar draw or /familiar import.' }
-      if (![...BUILT_IN, 'custom'].includes(species)) return { text: 'Pick one of: clawd, sprout, owl, blob, custom.' }
+      if (![...BUILT_IN, 'custom'].includes(species)) return { text: 'Pick one of: clawd, cat, sprout, owl, blob, custom. Or /familiar species alone for the lineup.' }
       await saveProfile($, current => ({ ...current, species }))
       await say($, 'happy', 'how do i look?')
       return { text: `${p.name} is a ${species} now.` }
@@ -310,7 +350,6 @@ export const register: Register = (on, options) => {
     const fits = (cells: Cell[][]) => e.props.bodyColumns >= (cells[0]?.length ?? 0) + 24 && e.props.maxRows >= cells.length + 1
     const full = wanted === 'full' ? fullCells(pixels, top, bottom) : null
     const cells = full !== null && fits(full) ? full : compactCells(pixels, top, bottom)
-    const spriteColumns = cells[0]?.length ?? 0
     if (!fits(cells)) {
       return (
         <Box marginTop={1} paddingLeft={1}>
@@ -329,34 +368,48 @@ export const register: Register = (on, options) => {
       </Box>
     )
 
-    if (e.surface === 'terminal') {
-      const { Raster } = $.ui.resolve(e)
-      return (
-        <Box flexDirection="row" columnGap={2} paddingLeft={1} marginTop={1}>
-          <Raster key="sprite" columns={spriteColumns} rows={cells.length} cells={rasterCells(cells)} />
-          {words}
-        </Box>
-      )
+    return (
+      <Box flexDirection="row" columnGap={2} paddingLeft={1} marginTop={1}>
+        {picture($, e, 'sprite', cells)}
+        {words}
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PICK_PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const p = await read($, profile)
+    if (p === null) return <Text dimColor>No familiar yet.</Text>
+
+    const looks: { species: Species; sprite: Sprite }[] = [
+      ...BUILT_IN.map(species => ({ species, sprite: SPECIES[species] })),
+      ...(p.custom === null ? [] : [{ species: 'custom' as const, sprite: p.custom }]),
+    ]
+    const choose = async (species: Species) => {
+      await saveProfile($, current => ({ ...current, species }))
+      await $.ui.close({ id: PICK_PANE })
+      await say($, 'happy', 'how do i look?')
     }
 
     return (
-      <Box flexDirection="row" columnGap={2} paddingLeft={1} marginTop={1}>
-        <Box flexDirection="column">
-          {cells.map(row => (
-            <Text>
-              {row.map(cell =>
-                cell.bg === null ? (
-                  <Text {...(cell.fg === null ? {} : { color: cell.fg })}>{cell.glyph}</Text>
-                ) : (
-                  <Text color={cell.fg ?? '#000000'} backgroundColor={cell.bg}>
-                    {cell.glyph}
-                  </Text>
-                ),
-              )}
-            </Text>
+      <Box flexDirection="column" rowGap={1}>
+        <Box flexDirection="row" flexWrap="wrap" columnGap={3} rowGap={1}>
+          {looks.map(({ species, sprite }, i) => (
+            <Box key={species} flexDirection="column" alignItems="center" rowGap={1}>
+              {picture($, e, `look-${species}`, preview(sprite))}
+              <Button
+                key={`pick-${species}`}
+                label={species}
+                hotkey={String(i + 1)}
+                {...(species === p.species ? { variant: 'primary' as const } : { dimColor: true })}
+                onPress={() => choose(species)}
+              />
+            </Box>
           ))}
         </Box>
-        {words}
+        <Text dimColor>
+          {p.custom === null ? 'draw your own with /familiar draw. ' : ''}esc closes
+        </Text>
       </Box>
     )
   })

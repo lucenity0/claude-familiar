@@ -246,7 +246,7 @@ test('/familiar renames, hides, imports and exports', async ($, on) => {
   expect((await $.command.run(run(`import ${blob}`))).text).toContain('wears the imported sprite')
   expect((await $.command.run(run('export'))).text).toBe(blob)
   expect((await $.command.run(run('import {"rows":[]}'))).text).toBe('That sprite does not fit: palette is missing.')
-  expect((await $.command.run(run('species dragon'))).text).toBe('Pick one of: clawd, sprout, owl, blob, custom.')
+  expect((await $.command.run(run('species dragon'))).text).toContain('Pick one of: clawd, cat, sprout, owl, blob, custom.')
 })
 
 test('quips stay off unless asked for, and then wait their turn', async ($, on) => {
@@ -284,6 +284,35 @@ test('with quips on it speaks at most once per window', { options: { quips: true
   await $.turn.complete(turn(10_000))
   await clock.settle()
   expect(asked.length).toBe(2)
+})
+
+test('every built-in sprite passes the same checks an import does', () => {
+  for (const sprite of Object.values(SPECIES)) expect(checkSprite(sprite)).toEqual(sprite)
+})
+
+test('/familiar species alone opens the lineup, and a press switches the look', async ($, on) => {
+  const { store } = world(on)
+  const opened: string[] = []
+  const closed: string[] = []
+  on('ui.open', (_, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('ui.close', (_, e) => {
+    closed.push(e.id)
+    return { value: undefined }
+  })
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  expect((await $.command.run(run('species'))).text).toContain('Press a number')
+  expect(opened).toEqual(['familiar-pick'])
+
+  const ui = await $.ui.mount({ ...DRAW, requestId: 'familiar-pick', surface: 'terminal' })
+  expect((await ui.findAll({ type: 'Raster' })).length).toBe(5)
+  await ui.press({ key: 'pick-cat' })
+  await ui.unmount()
+
+  expect((store.profile as Profile).species).toBe('cat')
+  expect(closed).toEqual(['familiar-pick'])
 })
 
 test('/familiar draw paints a sprite and saves it', async ($, on) => {

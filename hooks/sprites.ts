@@ -34,6 +34,23 @@ export const SPECIES: Record<Exclude<Species, 'custom'>, Sprite> = {
       '................',
     ],
   },
+  cat: {
+    palette: { o: '#e0a060', O: '#c07a3e', w: '#f3ead8', e: '#2b2b2b', k: '#f0a08a' },
+    rows: [
+      '................',
+      '.o..........o...',
+      '.oo........oo...',
+      '.okooooooooko...',
+      '.oooooOOooooo...',
+      '.oooeooooeooo...',
+      '.oooeooooeooo...',
+      '.oooowkkwoooo.o.',
+      '..oooowwoooo..o.',
+      '...oOooooOo..o..',
+      '...oooooooooo...',
+      '....ww..ww......',
+    ],
+  },
   sprout: {
     palette: { L: '#8fc46a', l: '#5a9a3e', s: '#5a9a3e', R: '#d97757', r: '#b65c3f', P: '#c96a4b', p: '#a5523a', e: '#2b2b2b', k: '#f0a08a' },
     rows: [

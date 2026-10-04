@@ -30,6 +30,7 @@ export const FRESH: Mind = { view: IDLE, isWorking: false, errorStreak: 0, tests
 
 const PET_LINES: Record<Species, string[]> = {
   clawd: ['*happy wiggle*', 'back to it.', 'pinch of thanks.'],
+  cat: ['*purrs*', 'mrrp.', '*slow blink*'],
   sprout: ['*rustles*', 'a little sun, thanks.', 'leaning toward you.'],
   owl: ['hoo.', '*ruffles feathers*', 'noted.'],
   blob: ['*squish*', 'boing.', 'jiggly thanks.'],
