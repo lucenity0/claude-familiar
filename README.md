@@ -2,7 +2,13 @@
 
 A pixel companion for Claude Code. It sits above the prompt, reacts to what happens in the session, and grows as you work. Draw your own, or pick one from the lineup.
 
-<img src="assets/demo.svg" alt="A familiar above the Claude Code prompt: thinking dots while Claude works, a sweat drop when a test fails, a hop when it passes, sparkles after a long turn, and z's when it dozes off" width="640">
+<p align="center">
+  <img src="assets/demo.svg" alt="A familiar above the Claude Code prompt: thinking dots while Claude works, a sweat drop when a test fails, a hop when it passes, sparkles after a long turn, and z's when it dozes off" width="640">
+</p>
+
+<p align="center">
+  <img src="assets/moods.svg" alt="The built-in familiars, clawd, cat, calico, sprout, owl and blob, acting out each mood together: working, worried, happy, proud, flinch and sleepy" width="640">
+</p>
 
 &nbsp;
 
@@ -70,9 +76,7 @@ Everything runs locally at no token cost, except `ask` and quips. Quips are off 
 
 ## sprites
 
-Six come built in. `/familiar species` shows them all in a pane.
-
-<img src="assets/lineup.svg" alt="The built-in familiars: clawd, cat, calico, sprout, owl and blob" width="900">
+The six above come built in, and `/familiar species` shows them in a pane to pick from.
 
 A sprite is 16 by 12 pixels: a palette, and one string per row where `.` is empty. The `e` key is the eye; it shuts into a line when the familiar sleeps or flinches.
 
