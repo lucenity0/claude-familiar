@@ -1,6 +1,6 @@
 import type { Mind, Mood, Species, View } from '../types'
 
-export const IDLE: View = { mood: 'idle', line: '', holdUntil: 0 }
+export const IDLE: View = { mood: 'idle', line: '', holdUntil: 0, since: 0 }
 
 /** How long a passing mood (happy, flinch, proud, a pet) holds, in ms. */
 export const HOLD_MS = 6_000
@@ -63,7 +63,12 @@ export function react(
   petLine = 0,
 ): { mind: Mind; xp: number } {
   const base: Mood = mind.isWorking ? 'working' : 'idle'
-  const show = (mood: Mood, line: string, hold = false): View => ({ mood, line, holdUntil: hold ? now + HOLD_MS : 0 })
+  const show = (mood: Mood, line: string, hold = false): View => ({
+    mood,
+    line,
+    holdUntil: hold ? now + HOLD_MS : 0,
+    since: mood === mind.view.mood ? mind.view.since : now,
+  })
   const active = { ...mind, lastActiveAt: now }
 
   switch (signal.kind) {

@@ -1,15 +1,17 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { TestBody } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { Mind, Profile } from '../types'
 import { FRESH, HOLD_MS, SLEEP_AFTER_MS, cleanQuip, isTestCommand, levelFor, react } from './mood'
-import { SPECIES, WIDTH, checkSprite, compactCells, frame, fromGrid, fullCells, rasterCells, toGrid, unfold, usedRows } from './sprites'
+import { MARGIN_RIGHT, MARGIN_TOP, SPECIES, WIDTH, bandRows, checkSprite, compactCells, frame, fromGrid, fullCells, rasterCells, toGrid, unfold, usedRows } from './sprites'
+import type { Pixel } from './sprites'
 
 const BAND = {
   plugin: 'familiar',
   component: 'AbovePrompt',
   requestId: 'band',
-  props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 100, scroll: { offset: 0, bodyRows: 12 }, view: {} },
+  props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 12 }, view: {} },
 } as const
 
 const DRAW = {
@@ -56,64 +58,77 @@ function world(on: On, entries: Record<string, unknown> = { profile: OWL }) {
 // ---------- sprites ----------
 
 const solid = (cells: { glyph: string; fg: string | null }[][]) => cells.flat().every(cell => cell.glyph === ' ' && cell.fg === null)
+const marks = (pixels: Pixel[][]) =>
+  pixels.flatMap((row, y) => row.flatMap((p, x) => (p.mark === undefined ? [] : [`${p.mark.glyph}@${x},${y}`])))
+// Clawd's head (its top four rows) ends at column 13, so things beside it start at column 14, row 2.
+const RIGHT = 14
+const HEAD = MARGIN_TOP
 
 test('full size draws each pixel as two solid cells, exactly as painted', () => {
   const sprite = { palette: { a: '#ff0000' }, rows: ['a...............', '.a..............', ...Array<string>(10).fill('.'.repeat(16))] }
-  const cells = fullCells(frame(sprite, 'idle', 0, 1), 0, 1)
-  expect(cells.length).toBe(2)
-  expect(cells[0]!.length).toBe(WIDTH * 2)
+  const cells = fullCells(frame(sprite, 'idle', 0, 1), MARGIN_TOP, MARGIN_TOP + 1)
+  expect(cells[0]!.length).toBe((WIDTH + MARGIN_RIGHT) * 2)
   expect(cells[0]!.slice(0, 4).map(cell => cell.bg)).toEqual(['#ff0000', '#ff0000', null, null])
   expect(cells[1]!.slice(0, 4).map(cell => cell.bg)).toEqual([null, null, '#ff0000', '#ff0000'])
   expect(solid(cells)).toBe(true)
 })
 
-test('the band draws only the rows a sprite uses, at either size', () => {
-  expect(usedRows(SPECIES.clawd)).toEqual({ top: 0, bottom: 9 })
+test('the band draws the rows a sprite uses plus room above, at either size', () => {
+  expect(bandRows(SPECIES.clawd)).toEqual({ top: 0, bottom: 11 })
   const pixels = frame(SPECIES.clawd, 'idle', 0, 1)
-  const full = fullCells(pixels, 0, 9)
-  expect([full.length, full[0]!.length]).toEqual([10, 32])
+  const full = fullCells(pixels, 0, 11)
+  expect([full.length, full[0]!.length]).toEqual([12, 40])
   expect(solid(full)).toBe(true)
-  const compact = compactCells(pixels, 0, 9)
-  expect([compact.length, compact[0]!.length]).toEqual([5, 16])
+  const compact = compactCells(pixels, 0, 11)
+  expect([compact.length, compact[0]!.length]).toEqual([6, 20])
   expect(solid(compact)).toBe(true)
-  expect(atob(rasterCells(full)).length).toBe(10 * 32 * 12)
+  expect(atob(rasterCells(full)).length).toBe(12 * 40 * 12)
 })
 
 test('compact folds a one-pixel edge into a half block', () => {
   const sprite = { palette: { a: '#ff0000' }, rows: ['a...............', ...Array<string>(11).fill('.'.repeat(16))] }
-  expect(compactCells(frame(sprite, 'idle', 0, 1), 0, 0)[0]![0]).toEqual({ glyph: '▀', fg: '#ff0000', bg: null })
+  expect(compactCells(frame(sprite, 'idle', 0, 1), MARGIN_TOP, MARGIN_TOP)[0]![0]).toEqual({ glyph: '▀', fg: '#ff0000', bg: null })
 })
 
 test('every built-in sprite is a valid sprite', () => {
   for (const sprite of Object.values(SPECIES)) expect(checkSprite(sprite)).toEqual(sprite)
 })
 
-test('moods live in the eyes and never move the body up or down', () => {
-  const used = (pixels: { color: string | null; lash?: string }[][]) => pixels.map(row => row.some(p => p.color !== null || p.lash !== undefined))
-  const base = used(frame(SPECIES.owl, 'idle', 0, 1))
-  for (const mood of ['idle', 'working', 'happy', 'worried', 'proud', 'sleepy'] as const) {
-    for (const tick of [0, 1, 2, 3, 9]) expect(used(frame(SPECIES.owl, mood, tick, 1))).toEqual(base)
+test('only a happy hop moves the body, two pixels up and back', () => {
+  // The owl's head ends at column 14; a sweat drop or dots appear from column 15 on.
+  const body = (pixels: Pixel[][]) => pixels.map(row => row.slice(0, 15).map(p => p.color !== null))
+  const rest = body(frame(SPECIES.owl, 'idle', 0, 1))
+  for (const mood of ['idle', 'working', 'worried', 'proud', 'sleepy'] as const) {
+    for (const tick of [0, 1, 2, 3, 9]) expect(body(frame(SPECIES.owl, mood, tick, 1, tick))).toEqual(rest)
   }
-  const glance = frame(SPECIES.clawd, 'working', 2, 1)
-  expect(glance[2]![5]!.color).toBe('#1f1f1f')
-  expect(glance[2]![4]!.color).toBe('#d77757')
-  expect(frame(SPECIES.clawd, 'worried', 0, 1)[4]![4]!.color).toBe('#1f1f1f')
+  expect(body(frame(SPECIES.owl, 'happy', 0, 1, 0))).toEqual([...rest.slice(2), rest[0]!, rest[0]!])
+  expect(body(frame(SPECIES.owl, 'happy', 1, 1, 1))).toEqual(rest)
+  expect(body(frame(SPECIES.owl, 'happy', 5, 1, 5))).toEqual(rest)
 })
 
-test('closed eyes are one flat line over the body', () => {
-  const pixels = frame(SPECIES.clawd, 'sleepy', 0, 1)
-  expect(pixels[2]![4]!.lash).toBeUndefined()
-  expect(pixels[3]![4]!.lash).toBeDefined()
-  const full = fullCells(pixels, 0, 9)
-  expect(full[3]!.filter(cell => cell.glyph === '━').length).toBe(4)
-  expect(full[3]!.every(cell => cell.glyph === ' ' || (cell.bg !== null && cell.fg !== cell.bg))).toBe(true)
-  expect(compactCells(pixels, 0, 9)[1]!.filter(cell => cell.glyph === '━').length).toBe(2)
+test('working builds thinking dots beside the head', () => {
+  expect(marks(frame(SPECIES.clawd, 'working', 0, 1))).toEqual([])
+  expect(marks(frame(SPECIES.clawd, 'working', 2, 1))).toEqual([`.@${RIGHT},${HEAD}`])
+  expect(marks(frame(SPECIES.clawd, 'working', 6, 1))).toEqual([`.@${RIGHT},${HEAD}`, `.@${RIGHT + 1},${HEAD}`, `.@${RIGHT + 2},${HEAD}`])
 })
 
-test('levels add sparkles beside the top row', () => {
-  const top = usedRows(SPECIES.blob).top
-  expect(fullCells(frame(SPECIES.blob, 'idle', 0, 5), top, top)[0]![WIDTH * 2 - 2]!.glyph).toBe('+')
-  expect(fullCells(frame(SPECIES.blob, 'idle', 0, 4), top, top)[0]![WIDTH * 2 - 2]!.glyph).toBe(' ')
+test('sleepy shuts the eyes as a flat line and lets z s drift up', () => {
+  const pixels = frame(SPECIES.clawd, 'sleepy', 9, 1)
+  const full = fullCells(pixels, 0, 11)
+  expect(full[MARGIN_TOP + 3]!.filter(cell => cell.glyph === '━').length).toBe(4)
+  expect(marks(pixels).filter(mark => /^[zZ]@/.test(mark))).toEqual([`Z@${RIGHT + 2},${HEAD - 2}`, `z@${RIGHT + 1},${HEAD - 1}`, `z@${RIGHT},${HEAD + 1}`])
+  expect(compactCells(pixels, 0, 11)[(MARGIN_TOP + 2) / 2]!.filter(cell => cell.glyph === '━').length).toBe(2)
+})
+
+test('worried slides a sweat drop down beside the head', () => {
+  for (const age of [0, 1, 2, 3]) expect(frame(SPECIES.clawd, 'worried', age, 1, age)[HEAD + age]![RIGHT]!.color).toBe('#7fc4f0')
+})
+
+test('proud flashes sparkles for a few seconds, and levels earn a lasting one', () => {
+  expect(marks(frame(SPECIES.clawd, 'proud', 0, 1, 0)).some(mark => mark.startsWith('+'))).toBe(true)
+  expect(marks(frame(SPECIES.clawd, 'proud', 9, 1, 9))).toEqual([])
+  expect(frame(SPECIES.blob, 'idle', 0, 5)[usedRows(SPECIES.blob).top + MARGIN_TOP + 6]![WIDTH + MARGIN_RIGHT - 1]!.mark?.glyph).toBe('+')
+  expect(marks(frame(SPECIES.blob, 'idle', 0, 4))).toEqual([])
 })
 
 test('checkSprite explains what does not fit', () => {
@@ -320,13 +335,29 @@ test('the draw pane folds its help under the grid when narrow and asks for room 
   await ui.unmount()
 })
 
-for (const [size, columns, rows] of [['full', 32, 10], ['compact', 16, 5]] as const) {
-  test(`the band draws clawd at ${size} size`, { options: { size } }, async ($, on) => {
-    world(on, { profile: { ...OWL, species: 'clawd' } })
+const CLAWD = { profile: { ...OWL, species: 'clawd' } }
+
+async function rasterSize($: Parameters<TestBody>[0], props: { isWorking?: boolean; maxRows?: number } = {}, rows = 47) {
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, ...props }, viewport: { columns: 150, rows } })
+  const raster = await ui.find({ type: 'Raster', key: 'sprite' })
+  await ui.unmount()
+  return raster === undefined ? undefined : [raster.props.columns, raster.props.rows]
+}
+
+test('auto size: full while you read, half size while Claude works or the window is short', async ($, on) => {
+  world(on, CLAWD)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  expect(await rasterSize($)).toEqual([40, 12])
+  expect(await rasterSize($, { isWorking: true })).toEqual([20, 6])
+  expect(await rasterSize($, {}, 24)).toEqual([20, 6])
+  expect(await rasterSize($, { maxRows: 8 })).toEqual([20, 6])
+  expect(await rasterSize($, { maxRows: 4 })).toBeUndefined()
+})
+
+for (const [size, columns, rows] of [['full', 40, 12], ['compact', 20, 6]] as const) {
+  test(`size ${size} holds while Claude works`, { options: { size } }, async ($, on) => {
+    world(on, CLAWD)
     await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
-    const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-    const raster = await ui.find({ type: 'Raster', key: 'sprite' })
-    expect(raster?.props).toMatchObject({ columns, rows })
-    await ui.unmount()
+    expect(await rasterSize($, { isWorking: true })).toEqual([columns, rows])
   })
 }

@@ -4,8 +4,8 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Mood, Profile, Species, Sprite } from '../types'
 import { FRESH, HOLD_MS, cleanQuip, formatDuration, levelFor, react } from './mood'
 import type { Signal } from './mood'
-import { SPECIES, checkSprite, compactCells, frame, fromGrid, fullCells, rasterCells, toGrid, unfold, usedRows } from './sprites'
-import type { Grid, SpriteSize } from './sprites'
+import { SPECIES, bandRows, checkSprite, compactCells, frame, fromGrid, fullCells, rasterCells, toGrid, unfold } from './sprites'
+import type { Cell, Grid, SpriteSize } from './sprites'
 
 const mind = atom({ plugin: 'familiar', key: 'mind' } as const, FRESH)
 const tick = atom({ plugin: 'familiar', key: 'tick' } as const, 0)
@@ -14,6 +14,10 @@ const profile = atom({ plugin: 'familiar', key: 'profile' } as const, null)
 
 const DRAW_PANE = 'familiar-draw'
 const FRAME_MS = 500
+/** How long the z's drift once it falls asleep. */
+const DRIFT_MS = 2 * 60_000
+/** Below this many terminal rows, the band stays half size. */
+const TALL_ROWS = 30
 const BUILT_IN: Exclude<Species, 'custom'>[] = ['clawd', 'sprout', 'owl', 'blob']
 const NAMES: Record<Exclude<Species, 'custom'>, string[]> = {
   clawd: ['clawd'],
@@ -81,7 +85,7 @@ async function saveProfile($: EngineInterface, fn: (p: Profile) => Profile): Pro
 
 async function say($: EngineInterface, mood: Mood, line: string) {
   const now = await $.clock.now()
-  await update($, mind, m => ({ ...m, lastActiveAt: now, view: { mood, line, holdUntil: now + HOLD_MS } }))
+  await update($, mind, m => ({ ...m, lastActiveAt: now, view: { mood, line, holdUntil: now + HOLD_MS, since: now } }))
   wake($)
 }
 
@@ -114,8 +118,9 @@ async function advance($: EngineInterface) {
   if (await read($, isHidden)) return sleep()
   await update($, tick, n => (n + 1) % 1_000_000)
   await feel($, { kind: 'tick' })
+  // Asleep, it lets the z's drift for a couple of minutes, then stops the clock until something wakes it.
   const { view, isWorking } = await read($, mind)
-  if (view.mood === 'sleepy' && !isWorking) sleep()
+  if (view.mood === 'sleepy' && !isWorking && (await $.clock.now()) - view.since > DRIFT_MS) sleep()
 }
 
 function sleep() {
@@ -139,7 +144,7 @@ async function quip($: EngineInterface, p: Profile, durationMs: number) {
 export const register: Register = (on, options) => {
   const hasQuips = options.quips === true
   const quipEveryMs = Math.max(1, Number(options.quipMinutes ?? 10)) * 60_000
-  const size: SpriteSize = options.size === 'compact' ? 'compact' : 'full'
+  const size: SpriteSize | 'auto' = options.size === 'compact' || options.size === 'full' ? options.size : 'auto'
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'familiar', description: 'Your pixel companion: pet, rename, draw, import, ask' })
@@ -160,7 +165,7 @@ export const register: Register = (on, options) => {
     if ((await read($, mind)).lastActiveAt === 0) {
       const now = await $.clock.now()
       const greeting = isProfile(stored) ? 'hi again.' : `hatched. i'm ${p.name}.`
-      await update($, mind, m => ({ ...m, lastActiveAt: now, view: { mood: 'happy' as const, line: greeting, holdUntil: now + 6_000 } }))
+      await update($, mind, m => ({ ...m, lastActiveAt: now, view: { mood: 'happy' as const, line: greeting, holdUntil: now + 6_000, since: now } }))
     }
     wake($)
 
@@ -296,11 +301,17 @@ export const register: Register = (on, options) => {
     const { Box, Text } = $.ui.resolve(e)
 
     const sprite = spriteOf(p)
-    const { top, bottom } = usedRows(sprite)
-    const pixels = frame(sprite, view.mood, await read($, tick), level)
-    const cells = size === 'full' ? fullCells(pixels, top, bottom) : compactCells(pixels, top, bottom)
+    const { top, bottom } = bandRows(sprite)
+    const age = Math.max(0, Math.floor(((await $.clock.now()) - view.since) / FRAME_MS))
+    const pixels = frame(sprite, view.mood, await read($, tick), level, age)
+    // Full size while you read or type; half size while Claude's output streams or the window is short.
+    const isRoomy = !e.props.isWorking && (e.viewport?.rows ?? TALL_ROWS) >= TALL_ROWS
+    const wanted: SpriteSize = size === 'auto' ? (isRoomy ? 'full' : 'compact') : size
+    const fits = (cells: Cell[][]) => e.props.bodyColumns >= (cells[0]?.length ?? 0) + 24 && e.props.maxRows >= cells.length + 1
+    const full = wanted === 'full' ? fullCells(pixels, top, bottom) : null
+    const cells = full !== null && fits(full) ? full : compactCells(pixels, top, bottom)
     const spriteColumns = cells[0]?.length ?? 0
-    if (e.props.bodyColumns < spriteColumns + 24 || e.props.maxRows < cells.length + 1) {
+    if (!fits(cells)) {
       return (
         <Box marginTop={1} paddingLeft={1}>
           <Text>

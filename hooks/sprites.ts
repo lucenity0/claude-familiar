@@ -90,13 +90,29 @@ export const SPECIES: Record<Exclude<Species, 'custom'>, Sprite> = {
 /** One color per pixel, `null` where the terminal shows through. */
 export type Grid = (string | null)[][]
 
-/** One pixel of a frame: a color, nothing, or a shut eye drawn as a flat line over its lid. */
-export type Pixel = { color: string | null; lash?: string }
+/** A character drawn over a pixel: a shut eye's line, a thinking dot, a z, a sparkle. */
+export type Mark = { glyph: string; fg: string }
+
+/** One pixel of a frame: its color (`null` shows the terminal), and maybe a mark over it. */
+export type Pixel = { color: string | null; mark?: Mark }
 
 /** What one terminal cell draws: a glyph over a background. */
 export type Cell = { glyph: string; fg: string | null; bg: string | null }
 
+/**
+ * A frame is the sprite on a slightly larger canvas: two rows above it for a
+ * hop or a rising z, and four columns to its right for dots, a sweat drop
+ * and sparkles. The extra space is always drawn, so the band never changes
+ * size between moods.
+ */
+export const MARGIN_TOP = 2
+export const MARGIN_RIGHT = 4
+const CANVAS_WIDTH = WIDTH + MARGIN_RIGHT
+
 const SPARKLE = '#f2d27a'
+const DOT = '#8a8f98'
+const SNORE = '#9aa4b8'
+const SWEAT = '#7fc4f0'
 
 function darken(hex: string, amount: number): string {
   const n = parseInt(hex.slice(1), 16)
@@ -114,17 +130,30 @@ export function usedRows(sprite: Sprite): { top: number; bottom: number } {
   return used.length === 0 ? { top: 0, bottom: 0 } : { top: used[0]!, bottom: used[used.length - 1]! }
 }
 
+/** The canvas rows the band draws: the sprite's used rows plus the margin above them. */
+export function bandRows(sprite: Sprite): { top: number; bottom: number } {
+  const { top, bottom } = usedRows(sprite)
+  return { top, bottom: bottom + MARGIN_TOP }
+}
+
 /**
- * The sprite at this moment, pixel by pixel. Moods live in the eyes (the
- * palette's `e` key): a glance aside, a look down or up, or shut as a flat
- * line over the lid. A flinch shakes sideways, sleep dims it all, and levels
- * 5 and 10 each add a sparkle beside the sprite's top row.
+ * The sprite at this moment, on its canvas. `tick` counts frames for loops;
+ * `age` counts frames since the mood began, for things that play once.
+ *
+ * - working: dots build up beside its head, `.` `..` `...`
+ * - happy: eyes squint and it hops twice, two pixels at a time
+ * - worried: a sweat drop slides down beside its head
+ * - proud: sparkles flash around it for a few seconds
+ * - sleepy: eyes shut, colors dim, and z's drift up
+ * - flinch: eyes shut and it shakes sideways
+ * - idle: a blink now and then
+ *
+ * Moves are whole pixels, and vertical ones two at a time, so a half-size
+ * band (two pixel rows to a terminal row) still moves by whole rows.
  */
-export function frame(sprite: Sprite, mood: Mood, tick: number, level: number): Pixel[][] {
-  let grid = toGrid(sprite)
+export function frame(sprite: Sprite, mood: Mood, tick: number, level: number, age = tick): Pixel[][] {
+  const grid = toGrid(sprite)
   const eye = sprite.palette.e
-  const eyes: [number, number][] = []
-  sprite.rows.forEach((row, y) => [...row].forEach((key, x) => key === 'e' && eyes.push([x, y])))
   const isEye = (x: number, y: number) => sprite.rows[y]?.[x] === 'e'
   const lidAt = (x: number, y: number) => {
     let side = x - 1
@@ -132,46 +161,58 @@ export function frame(sprite: Sprite, mood: Mood, tick: number, level: number): 
     return grid[y]?.[side] ?? grid[y]?.[x + 1] ?? null
   }
 
-  const look = (dx: number, dy: number) => {
-    if (eye === undefined || (dx === 0 && dy === 0)) return
-    const moved = grid.map((row, y) => row.map((color, x) => (isEye(x, y) ? lidAt(x, y) : color)))
-    for (const [x, y] of eyes) {
-      const to = moved[y + dy]?.[x + dx]
-      if (to === undefined || to === null) moved[y]![x] = eye
-      else moved[y + dy]![x + dx] = eye
-    }
-    grid = moved
-  }
-
   const isShut =
     mood === 'happy' || mood === 'flinch' || mood === 'sleepy' || (mood === 'idle' && tick % 10 === 9) || (mood === 'worried' && tick % 8 === 7)
-  if (!isShut && mood === 'working') look([0, 1, 0, -1][Math.floor(tick / 2) % 4]!, 0)
-  if (!isShut && mood === 'proud') look(0, -1)
-  if (!isShut && mood === 'worried') look(0, 1)
-
   const dim = (color: string | null) => (color === null || mood !== 'sleepy' ? color : darken(color, 0.35))
-  let pixels: Pixel[][] = grid.map((row, y) =>
+
+  const body: Pixel[][] = grid.map((row, y) =>
     row.map((color, x) => {
       if (!isShut || eye === undefined || !isEye(x, y)) return { color: dim(color) }
       // A tall eye shuts to its lowest row; the rows above become lid.
-      return isEye(x, y + 1) ? { color: dim(lidAt(x, y)) } : { color: dim(lidAt(x, y)), lash: dim(eye)! }
+      return isEye(x, y + 1) ? { color: dim(lidAt(x, y)) } : { color: dim(lidAt(x, y)), mark: { glyph: '━', fg: dim(eye)! } }
     }),
   )
 
-  if (mood === 'flinch') {
-    const blank: Pixel = { color: null }
-    pixels = pixels.map(row => (tick % 2 === 0 ? [blank, ...row.slice(0, WIDTH - 1)] : [...row.slice(1), blank]))
-  }
+  const hop = mood === 'happy' && age < 4 && age % 2 === 0 ? 2 : 0
+  const canvas: Pixel[][] = Array.from({ length: HEIGHT + MARGIN_TOP }, () => Array.from({ length: CANVAS_WIDTH }, () => ({ color: null })))
+  body.forEach((row, y) => row.forEach((pixel, x) => (canvas[y + MARGIN_TOP - hop]![x] = pixel)))
 
   const { top } = usedRows(sprite)
-  const sparkles = level >= 10 ? 2 : level >= 5 ? 1 : 0
-  const spots: [number, number][] = [[WIDTH - 1, top], [0, top]]
-  for (const [x, y] of spots.slice(0, sparkles)) {
-    const pixel = pixels[y]?.[x]
-    if (pixel !== undefined && pixel.color === null && tick % 4 !== 3) pixels[y]![x] = { color: null, lash: SPARKLE }
+  const head = top + MARGIN_TOP - hop
+  // The last painted column of the head (its top four rows): things appear just right of it.
+  const right = Math.max(0, ...sprite.rows.slice(top, top + 4).map(row => row.search(/[^.]\.*$/)))
+  const put = (x: number, y: number, pixel: Pixel) => {
+    const at = canvas[y]?.[x]
+    if (at !== undefined && at.color === null && at.mark === undefined) canvas[y]![x] = pixel
   }
 
-  return pixels
+  if (mood === 'working') {
+    const dots = Math.floor(tick / 2) % 4
+    for (let i = 0; i < dots; i += 1) put(right + 1 + i, head, { color: null, mark: { glyph: '.', fg: DOT } })
+  }
+  if (mood === 'sleepy') {
+    const drift = [
+      { x: right + 1, y: head + 1, glyph: 'z' },
+      { x: right + 2, y: head - 1, glyph: 'z' },
+      { x: right + 3, y: head - 2, glyph: 'Z' },
+    ]
+    for (const z of drift.slice(0, Math.floor(tick / 3) % 4)) put(z.x, z.y, { color: null, mark: { glyph: z.glyph, fg: SNORE } })
+  }
+  if (mood === 'worried') put(right + 1, head + (age % 4), { color: SWEAT })
+  if (mood === 'proud' && age < 8) {
+    const spots: [number, number][] = [[right + 1, head - 1], [right + 3, head + 2], [right + 2, head + 5], [0, head - 1]]
+    spots.forEach(([x, y], i) => (i + age) % 2 === 0 && put(x, y, { color: null, mark: { glyph: '+', fg: SPARKLE } }))
+  }
+
+  const sparkles = level >= 10 ? 2 : level >= 5 ? 1 : 0
+  const badge: [number, number][] = [[CANVAS_WIDTH - 1, head + 6], [CANVAS_WIDTH - 2, head + 8]]
+  if (tick % 4 !== 3) for (const [x, y] of badge.slice(0, sparkles)) put(x, y, { color: null, mark: { glyph: '+', fg: SPARKLE } })
+
+  if (mood === 'flinch') {
+    const blank: Pixel = { color: null }
+    return canvas.map(row => (tick % 2 === 0 ? [blank, ...row.slice(0, CANVAS_WIDTH - 1)] : [...row.slice(1), blank]))
+  }
+  return canvas
 }
 
 /** Plain pixels for a grid, for drawings that have no mood. */
@@ -183,13 +224,11 @@ export function still(grid: Grid): Pixel[][] {
 export function fullCells(pixels: Pixel[][], top = 0, bottom = pixels.length - 1): Cell[][] {
   return pixels.slice(top, bottom + 1).map(row =>
     row.flatMap((pixel): Cell[] => {
-      if (pixel.lash !== undefined) {
-        const glyph = pixel.color === null ? '+' : '━'
-        const cell = { glyph, fg: pixel.lash, bg: pixel.color }
-        return pixel.color === null ? [cell, { glyph: ' ', fg: null, bg: null }] : [cell, cell]
-      }
-      const cell = { glyph: ' ', fg: null, bg: pixel.color }
-      return [cell, cell]
+      const fill: Cell = { glyph: ' ', fg: null, bg: pixel.color }
+      if (pixel.mark === undefined) return [fill, fill]
+      const marked: Cell = { glyph: pixel.mark.glyph, fg: pixel.mark.fg, bg: pixel.color }
+      // A shut eye's line runs across the whole pixel; a dot or a z sits in its left half.
+      return pixel.mark.glyph === '━' ? [marked, marked] : [marked, fill]
     }),
   )
 }
@@ -200,13 +239,12 @@ export function compactCells(pixels: Pixel[][], top = 0, bottom = pixels.length 
   const rows: Cell[][] = []
   for (let y = start; y <= bottom; y += 2) {
     const row: Cell[] = []
-    for (let x = 0; x < WIDTH; x += 1) {
+    for (let x = 0; x < (pixels[0]?.length ?? 0); x += 1) {
       const upper = pixels[y]?.[x] ?? { color: null }
       const lower = pixels[y + 1]?.[x] ?? { color: null }
-      const lashed = upper.lash !== undefined ? upper : lower.lash !== undefined ? lower : undefined
-      if (lashed !== undefined) {
-        const glyph = lashed.color === null ? '+' : '━'
-        row.push({ glyph, fg: lashed.lash!, bg: lashed.color })
+      const marked = upper.mark !== undefined ? upper : lower.mark !== undefined ? lower : undefined
+      if (marked !== undefined) {
+        row.push({ glyph: marked.mark!.glyph, fg: marked.mark!.fg, bg: marked.color ?? (marked === upper ? lower.color : upper.color) })
       } else if (upper.color === null && lower.color === null) row.push({ glyph: ' ', fg: null, bg: null })
       else if (upper.color === lower.color) row.push({ glyph: ' ', fg: null, bg: upper.color })
       else if (lower.color === null) row.push({ glyph: '▀', fg: upper.color, bg: null })

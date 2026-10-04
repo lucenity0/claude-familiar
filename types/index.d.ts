@@ -20,6 +20,8 @@ export type View = {
   line: string
   /** Until when (epoch ms) a passing mood holds before settling back. */
   holdUntil: number
+  /** When (epoch ms) this mood began, so an animation can play once from its start. */
+  since: number
 }
 
 /** What the band shows plus what the session remembers between signals. */
