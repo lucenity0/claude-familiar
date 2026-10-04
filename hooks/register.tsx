@@ -180,6 +180,34 @@ async function quip($: EngineInterface, p: Profile, durationMs: number) {
   if (line !== undefined) await update($, mind, m => ({ ...m, view: { ...m.view, line } }))
 }
 
+/** Loads the familiar from the store, or hatches a new one. Also runs when its state was wiped mid-session, as /compact does. */
+async function hatch($: EngineInterface): Promise<Profile> {
+  const stored = await $.store.get('profile')
+  let p: Profile
+  if (isProfile(stored)) {
+    const custom = stored.custom ? checkSprite(unfold(stored.custom)) : null
+    p = { ...stored, custom: typeof custom === 'string' ? null : custom }
+    if (p.species === 'custom' && p.custom === null) p = { ...p, species: 'clawd' }
+    if (JSON.stringify(p) !== JSON.stringify(stored)) await $.store.set('profile', p)
+  } else {
+    const species = 'clawd'
+    p = { name: pick(NAMES[species]), species, xp: 0, hatchedAt: new Date(await $.clock.now()).toISOString(), custom: null }
+    await $.store.set('profile', p)
+  }
+  await update($, profile, () => p)
+  if ((await read($, mind)).lastActiveAt === 0) {
+    const now = await $.clock.now()
+    const greeting = isProfile(stored) ? 'hi again.' : `hatched. i'm ${p.name}.`
+    await update($, mind, m => ({ ...m, lastActiveAt: now, view: { mood: 'happy' as const, line: greeting, holdUntil: now + 6_000, since: now } }))
+  }
+  return p
+}
+
+/** The familiar, hatching it again if its state was lost since the session started. */
+async function awake($: EngineInterface): Promise<Profile> {
+  return (await read($, profile)) ?? (await hatch($))
+}
+
 export const register: Register = (on, options) => {
   const hasQuips = options.quips === true
   const quipEveryMs = Math.max(1, Number(options.quipMinutes ?? 10)) * 60_000
@@ -187,25 +215,7 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'familiar', description: 'Your pixel companion: pet, rename, draw, import, ask' })
-
-    const stored = await $.store.get('profile')
-    let p: Profile
-    if (isProfile(stored)) {
-      const custom = stored.custom ? checkSprite(unfold(stored.custom)) : null
-      p = { ...stored, custom: typeof custom === 'string' ? null : custom }
-      if (p.species === 'custom' && p.custom === null) p = { ...p, species: 'clawd' }
-      if (JSON.stringify(p) !== JSON.stringify(stored)) await $.store.set('profile', p)
-    } else {
-      const species = 'clawd'
-      p = { name: pick(NAMES[species]), species, xp: 0, hatchedAt: new Date(await $.clock.now()).toISOString(), custom: null }
-      await $.store.set('profile', p)
-    }
-    await update($, profile, () => p)
-    if ((await read($, mind)).lastActiveAt === 0) {
-      const now = await $.clock.now()
-      const greeting = isProfile(stored) ? 'hi again.' : `hatched. i'm ${p.name}.`
-      await update($, mind, m => ({ ...m, lastActiveAt: now, view: { mood: 'happy' as const, line: greeting, holdUntil: now + 6_000, since: now } }))
-    }
+    await hatch($)
     wake($)
 
     return next(e)
@@ -214,6 +224,7 @@ export const register: Register = (on, options) => {
   on('turn.start', async ($, e, next) => {
     runtime.turnTools = 0
     runtime.turnErrors = 0
+    await awake($)
     await feel($, { kind: 'turn-start' })
     return next(e)
   })
@@ -260,8 +271,7 @@ export const register: Register = (on, options) => {
     const args = e.args.trim()
     const sub = args.split(/\s+/)[0] ?? ''
     const rest = args.slice(sub.length).trim()
-    const p = await read($, profile)
-    if (p === null) return { text: 'Your familiar has not hatched yet. Try again in a moment.' }
+    const p = await awake($)
 
     if (sub === '') {
       const hidden = await read($, isHidden)

@@ -210,6 +210,12 @@ test('it hatches once and remembers itself', async ($, on) => {
   await ui.unmount()
 })
 
+test('it comes back from the store if its state is wiped mid-session', async ($, on) => {
+  world(on)
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: '' }))
+  expect((await $.command.run(run('rename Pip'))).text).toBe('hoot is now Pip.')
+})
+
 test('the band reacts on every surface and folds up when narrow', async ($, on) => {
   world(on)
   on('tool.call', () => ({ deny: 'seatbelt: blocked `rm -rf ~`' }))
