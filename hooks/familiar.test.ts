@@ -246,7 +246,7 @@ test('/familiar renames, hides, imports and exports', async ($, on) => {
   expect((await $.command.run(run(`import ${blob}`))).text).toContain('wears the imported sprite')
   expect((await $.command.run(run('export'))).text).toBe(blob)
   expect((await $.command.run(run('import {"rows":[]}'))).text).toBe('That sprite does not fit: palette is missing.')
-  expect((await $.command.run(run('species dragon'))).text).toContain('Pick one of: clawd, cat, sprout, owl, blob, custom.')
+  expect((await $.command.run(run('species dragon'))).text).toContain('Pick one of: clawd, cat, calico, sprout, owl, blob, custom.')
 })
 
 test('quips stay off unless asked for, and then wait their turn', async ($, on) => {
@@ -307,9 +307,15 @@ test('/familiar species alone opens the lineup, and a press switches the look', 
   expect(opened).toEqual(['familiar-pick'])
 
   const ui = await $.ui.mount({ ...DRAW, requestId: 'familiar-pick', surface: 'terminal' })
-  expect((await ui.findAll({ type: 'Raster' })).length).toBe(5)
-  await ui.press({ key: 'pick-cat' })
+  // A short pane gets half-size looks; a tall one gets full-size squares.
+  expect((await ui.findAll({ type: 'Raster' })).length).toBe(6)
+  expect((await ui.find({ type: 'Raster', key: 'look-cat' }))?.props.columns).toBe(16)
   await ui.unmount()
+
+  const tall = await $.ui.mount({ ...DRAW, requestId: 'familiar-pick', surface: 'terminal', props: { ...DRAW.props, scroll: { offset: 0, bodyRows: 60 } } })
+  expect((await tall.find({ type: 'Raster', key: 'look-cat' }))?.props.columns).toBe(32)
+  await tall.press({ key: 'pick-cat' })
+  await tall.unmount()
 
   expect((store.profile as Profile).species).toBe('cat')
   expect(closed).toEqual(['familiar-pick'])

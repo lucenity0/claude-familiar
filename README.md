@@ -2,7 +2,7 @@
 
 A pixel companion for Claude Code. It sits above the prompt, reacts to what happens in the session, and grows as you work. Draw your own, or pick one from the lineup.
 
-<img src="assets/lineup.svg" alt="The five built-in familiars: clawd, cat, sprout, owl and blob" width="900">
+<img src="assets/lineup.svg" alt="The built-in familiars: clawd, cat, calico, sprout, owl and blob" width="900">
 
 &nbsp;
 
@@ -45,6 +45,7 @@ It gains xp from finished turns and fixed tests, and keeps it across sessions. L
 /familiar pet             say hi
 /familiar rename <name>
 /familiar species         pick a look from the lineup
+/familiar species <name>  clawd, cat, calico, sprout, owl, blob or custom
 /familiar draw            a 16x12 pixel editor, one click per pixel
 /familiar export          print the sprite as json
 /familiar import <json>
@@ -61,7 +62,7 @@ Change these in `/config`, or in `~/.claude/settings.json`:
 { "pluginConfigs": { "familiar@inline": { "options": { "size": "auto", "quips": false, "quipMinutes": 10 } } } }
 ```
 
-`size` is `auto` (full while you read, half while Claude works), `full` or `compact`. Full size draws each pixel as a square of background color, so it has no gaps in any terminal. Compact uses half-block characters, which can show thin seams in some fonts.
+`size` is `auto` (full while you read, half while Claude works), `full` or `compact`. Full size draws each pixel as a square of background color, so it has no gaps in any terminal. Compact uses half-block characters: Warp draws them cleanly, while Apple Terminal and VS Code can show thin seams between rows.
 
 Everything runs locally at no token cost, except `ask` and quips. Quips are off by default; turned on, it reacts to a finished turn with one short Haiku line, at most once every `quipMinutes`.
 
@@ -73,20 +74,20 @@ A sprite is 16 by 12 pixels: a palette, and one string per row where `.` is empt
 
 ```json
 {
-  "palette": { "o": "#e0a060", "O": "#c07a3e", "w": "#f3ead8", "e": "#2b2b2b", "k": "#f0a08a" },
+  "palette": { "K": "#5c2626", "o": "#e8b660", "c": "#f0dcb0", "W": "#ffffff", "k": "#f6cfcf", "e": "#5c2626" },
   "rows": [
-    "................",
-    ".o..........o...",
-    ".oo........oo...",
-    ".okooooooooko...",
-    ".oooooOOooooo...",
-    ".oooeooooeooo...",
-    ".oooeooooeooo...",
-    ".oooowkkwoooo.o.",
-    "..oooowwoooo..o.",
-    "...oOooooOo..o..",
-    "...oooooooooo...",
-    "....ww..ww......"
+    "...KK......KK...",
+    "..KooK....KccK..",
+    ".KooooKKKKccccK.",
+    "KooooooWWccccccK",
+    "KoooooWWWWcccccK",
+    "KoooeWWWWWWecccK",
+    "KWkkeWWWWWWekkWK",
+    "KWWWWWWWWWWWWWWK",
+    "KWKKKWWWWWWKKKWK",
+    ".KccWKKKKKKWccK.",
+    ".KWWWK....KWWWK.",
+    "..KKK......KKK.."
   ]
 }
 ```

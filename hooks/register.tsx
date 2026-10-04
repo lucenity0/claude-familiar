@@ -19,10 +19,11 @@ const FRAME_MS = 500
 const DRIFT_MS = 2 * 60_000
 /** Below this many terminal rows, the band stays half size. */
 const TALL_ROWS = 30
-const BUILT_IN: Exclude<Species, 'custom'>[] = ['clawd', 'cat', 'sprout', 'owl', 'blob']
+const BUILT_IN: Exclude<Species, 'custom'>[] = ['clawd', 'cat', 'calico', 'sprout', 'owl', 'blob']
 const NAMES: Record<Exclude<Species, 'custom'>, string[]> = {
   clawd: ['clawd'],
-  cat: ['miso', 'tofu', 'pixel'],
+  cat: ['tofu', 'miso', 'pixel'],
+  calico: ['patches', 'maple', 'pip'],
   sprout: ['fern', 'basil', 'moss'],
   owl: ['hoot', 'sage', 'ink'],
   blob: ['mochi', 'gloop', 'bean'],
@@ -42,7 +43,7 @@ const USAGE = [
   '/familiar pet             say hi',
   '/familiar rename <name>   give it a new name',
   '/familiar species         pick a look from the lineup',
-  '/familiar species <name>  clawd, cat, sprout, owl, blob or custom',
+  '/familiar species <name>  clawd, cat, calico, sprout, owl, blob or custom',
   '/familiar draw            paint your own in a pane',
   '/familiar export          print the sprite as JSON',
   '/familiar import <json>   load a sprite someone shared',
@@ -76,10 +77,13 @@ const runtime = {
   petCount: 0,
 }
 
-/** A sprite at rest, half size and trimmed to the rows it uses: how the lineup shows each look. */
-function preview(sprite: Sprite): Cell[][] {
+/** A sprite at rest, trimmed to the rows it uses: how the lineup shows each look. */
+function preview(sprite: Sprite, size: SpriteSize): Cell[][] {
   const { top, bottom } = usedRows(sprite)
-  return compactCells(frame(sprite, 'idle', 0, 1), top + MARGIN_TOP, bottom + MARGIN_TOP).map(row => row.slice(0, WIDTH))
+  const pixels = frame(sprite, 'idle', 0, 1)
+  return size === 'full'
+    ? fullCells(pixels, top + MARGIN_TOP, bottom + MARGIN_TOP).map(row => row.slice(0, WIDTH * 2))
+    : compactCells(pixels, top + MARGIN_TOP, bottom + MARGIN_TOP).map(row => row.slice(0, WIDTH))
 }
 
 /** Cells drawn as a Raster on the terminal, and as colored text everywhere else. */
@@ -288,7 +292,7 @@ export const register: Register = (on, options) => {
     if (sub === 'species') {
       const species = rest as Species
       if (species === 'custom' && p.custom === null) return { text: 'No custom sprite yet. Make one with /familiar draw or /familiar import.' }
-      if (![...BUILT_IN, 'custom'].includes(species)) return { text: 'Pick one of: clawd, cat, sprout, owl, blob, custom. Or /familiar species alone for the lineup.' }
+      if (![...BUILT_IN, 'custom'].includes(species)) return { text: 'Pick one of: clawd, cat, calico, sprout, owl, blob, custom. Or /familiar species alone for the lineup.' }
       await saveProfile($, current => ({ ...current, species }))
       await say($, 'happy', 'how do i look?')
       return { text: `${p.name} is a ${species} now.` }
@@ -385,6 +389,11 @@ export const register: Register = (on, options) => {
       ...BUILT_IN.map(species => ({ species, sprite: SPECIES[species] })),
       ...(p.custom === null ? [] : [{ species: 'custom' as const, sprite: p.custom }]),
     ]
+    // Full size has no seams in any terminal; the lineup drops to half size only when it would not fit.
+    const perRow = Math.max(1, Math.floor((e.props.bodyColumns + 3) / (WIDTH * 2 + 3)))
+    const tallest = Math.max(...looks.map(look => usedRows(look.sprite).bottom - usedRows(look.sprite).top + 1))
+    const needed = Math.ceil(looks.length / perRow) * (tallest + 3) + 1
+    const size: SpriteSize = needed <= e.props.scroll.bodyRows ? 'full' : 'compact'
     const choose = async (species: Species) => {
       await saveProfile($, current => ({ ...current, species }))
       await $.ui.close({ id: PICK_PANE })
@@ -396,7 +405,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="row" flexWrap="wrap" columnGap={3} rowGap={1}>
           {looks.map(({ species, sprite }, i) => (
             <Box key={species} flexDirection="column" alignItems="center" rowGap={1}>
-              {picture($, e, `look-${species}`, preview(sprite))}
+              {picture($, e, `look-${species}`, preview(sprite, size))}
               <Button
                 key={`pick-${species}`}
                 label={species}

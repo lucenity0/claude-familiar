@@ -1,6 +1,6 @@
 export type Mood = 'idle' | 'working' | 'happy' | 'worried' | 'flinch' | 'proud' | 'sleepy'
 
-export type Species = 'clawd' | 'cat' | 'sprout' | 'owl' | 'blob' | 'custom'
+export type Species = 'clawd' | 'cat' | 'calico' | 'sprout' | 'owl' | 'blob' | 'custom'
 
 /** A sprite: 12 rows of 16 palette keys, `.` for a see-through pixel. */
 export type Sprite = { palette: Record<string, string>; rows: string[] }
