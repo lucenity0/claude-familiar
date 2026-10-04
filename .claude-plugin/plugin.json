@@ -1,0 +1,36 @@
+{
+  "name": "familiar",
+  "version": "0.1.0",
+  "description": "A pixel-art companion above the prompt that reacts to your session, levels up, and can be redrawn by hand",
+  "author": {
+    "name": "Nafees S",
+    "url": "https://github.com/lucenity0"
+  },
+  "repository": "https://github.com/lucenity0/claude-code-mods",
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "quips": {
+      "type": "boolean",
+      "title": "Quips",
+      "description": "Let it react to finished turns with a short line from Haiku (uses a few tokens)",
+      "default": false
+    },
+    "quipMinutes": {
+      "type": "number",
+      "title": "Minutes between quips",
+      "description": "At most one quip in this many minutes",
+      "default": 10
+    },
+    "size": {
+      "type": "string",
+      "title": "Sprite size",
+      "description": "full draws each pixel as a square, exactly as the editor shows it. compact draws it at half size with half-block characters, which show thin gaps in terminals with line or letter spacing above 1.",
+      "options": [
+        "full",
+        "compact"
+      ],
+      "default": "full"
+    }
+  }
+}
