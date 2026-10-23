@@ -1,5 +1,7 @@
 # claude-familiar
 
+[![Listed on statuslin.es](https://img.shields.io/badge/listed%20on-statuslin.es-c96442)](https://statuslin.es/mods/familiar)
+
 A pixel companion for Claude Code. It sits above the prompt, reacts to what happens in the session, and grows as you work. Draw your own, or pick one from the lineup.
 
 <p align="center">
